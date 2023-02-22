@@ -1,11 +1,18 @@
-import telebot
+import logging
 import time
+
+import telebot
 from environs import Env
 
+# Настройки логирования
+logging.basicConfig(filename='bot.log', level=logging.INFO)
 
 env = Env()
 env.read_env(override=True)
 bot = telebot.TeleBot(env.str("TG_TOKEN"))
+
+# Словарь для хранения сообщений от пользователей
+user_messages = {}
 
 
 @bot.message_handler(commands=['start'])
@@ -13,7 +20,7 @@ def send_welcome(message):
     # Отправляем сообщение приветствия и кнопки
     bot.send_message(
         message.chat.id,
-        'Добро пожаловать! Что вы хотите сделать?',
+        'Добро пожаловать! Для начала работы, оплатите подписку.',
         reply_markup=get_main_keyboard()
     )
 
@@ -22,29 +29,55 @@ def get_main_keyboard():
     # Создаем клавиатуру с основными действиями пользователя
     keyboard = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
     keyboard.add(telebot.types.KeyboardButton('Оплатить подписку'))
-    keyboard.add(telebot.types.KeyboardButton('Недоволен своим сайтом'))
     return keyboard
 
 
 @bot.message_handler(func=lambda message: message.text == 'Оплатить подписку')
 def check_subscription(message):
-    # Отправляем сообщение о проверке подписки и кнопки
+    # Отправляем сообщение о способе оплаты
     bot.send_message(
         message.chat.id,
-        'Хотите убедиться, что все в порядке?',
+        'Выберите способ оплаты',
         reply_markup=get_check_subscription_keyboard()
     )
 
 
 def get_check_subscription_keyboard():
-    # Создаем клавиатуру с кнопкой "Да" и "Нет"
+    # Создаем клавиатуру с кнопками выбора оплаты
     keyboard = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
-    keyboard.add(telebot.types.KeyboardButton('Да'))
-    keyboard.add(telebot.types.KeyboardButton('Нет'))
+    keyboard.add(telebot.types.KeyboardButton('Bitcoin'))
+    keyboard.add(telebot.types.KeyboardButton('Рубли СБЕР'))
     return keyboard
 
 
-@bot.message_handler(func=lambda message: message.text == 'Да')
+@bot.message_handler(func=lambda message: message.text == 'Bitcoin')
+def get_btc_bill(message):
+    # Отправляем сообщение с реквизитами и кнопками
+    bot.send_message(
+        message.chat.id,
+        'Оплатите 0.026 btc на счет 1GSMZJT6kED5WGt6AnqapVt4dq7N2shbEr в течении 30 минут',
+        reply_markup=check_payment_keyboard()
+    )
+
+
+@bot.message_handler(func=lambda message: message.text == 'Рубли СБЕР')
+def get_sber_bill(message):
+    # Отправляем сообщение с реквизитами и кнопками
+    bot.send_message(
+        message.chat.id,
+        'Оплатите 47000р на номер карты 4000 4774 7438 6478',
+        reply_markup=check_payment_keyboard()
+    )
+
+
+def check_payment_keyboard():
+    # Создаем клавиатуру с кнопками для бота
+    keyboard = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+    keyboard.add(telebot.types.KeyboardButton('Проверить оплату'))
+    return keyboard
+
+
+@bot.message_handler(func=lambda message: message.text == 'Проверить оплату')
 def show_bot_menu(message):
     # Отправляем сообщение с меню бота и кнопками
     bot.send_message(
@@ -57,50 +90,45 @@ def show_bot_menu(message):
 def get_bot_menu_keyboard():
     # Создаем клавиатуру с кнопками для бота
     keyboard = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
-    keyboard.add(telebot.types.KeyboardButton('Оставить заявку на доработку'))
+    keyboard.add(telebot.types.KeyboardButton('Оставить заявку'))
     keyboard.add(telebot.types.KeyboardButton('Запросить помощь по заявке'))
     return keyboard
 
 
-@bot.message_handler(func=lambda message: message.text == 'Нет')
-def send_support_request(message):
-    # Отправляем сообщение о том, что пользователь хочет получить помощь от PHPSupport и кнопки
-    bot.send_message(
-        message.chat.id,
-        'Вы недовольны своим сайтом. Хотите получить помощь от PHPSupport?',
-        reply_markup=get_support_request_keyboard()
-    )
-
-
-def get_support_request_keyboard():
-    # Создаем клавиатуру с кнопкой "Да" и "Нет"
-    keyboard = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
-    keyboard.add(telebot.types.KeyboardButton('Да'))
-    keyboard.add(telebot.types.KeyboardButton('Нет'))
-    return keyboard
-
-
-@bot.message_handler(func=lambda message: message.text == 'Да')
+@bot.message_handler(func=lambda message: message.text == 'Оставить заявку')
 def show_support_examples(message):
     # Отправляем сообщение с примерами заявок и кнопками
     bot.send_message(
         message.chat.id,
-        'Чтобы оставить заявку на доработку, вам необходимо заполнить форму. Вот несколько примеров:',
+        'Чтобы оставить заявку на доработку, вам необходимо заполнить форму. Вот несколько примеров: Тут нужен шаблон',
+        reply_markup=get_help_request_status_keyboard()
+    )
+
+
+# Обработчик текстовых сообщений
+@bot.message_handler(func=lambda message: True, content_types=['text'])
+def handle_text_message(message):
+    # Сохраняем сообщение в словаре с помощью ID пользователя
+    user_messages[message.chat.id] = message.text
+    bot.send_message(
+        message.chat.id,
+        'Сообщение сохранено. Нажмите кнопку "Продолжить", чтобы продолжить работу.',
         reply_markup=get_support_examples_keyboard()
     )
+    logging.info(message.text)
 
 
 def get_support_examples_keyboard():
     # Создаем клавиатуру с кнопками для примеров заявок
-    keyboard = telebot.types.InlineKeyboardMarkup()
-    keyboard.row(
-        telebot.types.InlineKeyboardButton('Заявка на добавление функционала')
+    keyboard = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+    keyboard.add(
+        telebot.types.KeyboardButton('Заявка на добавление функционала')
     )
-    keyboard.row(
-        telebot.types.InlineKeyboardButton('Заявка на исправление ошибки')
+    keyboard.add(
+        telebot.types.KeyboardButton('Заявка на исправление ошибки')
     )
-    keyboard.row(
-        telebot.types.InlineKeyboardButton(
+    keyboard.add(
+        telebot.types.KeyboardButton(
             'Заявка на улучшение производительности'
         )
     )
@@ -139,12 +167,12 @@ def send_help_request(message):
 
 def get_help_request_form_keyboard():
     # Создаем клавиатуру с кнопками для формы заявки на помощь
-    keyboard = telebot.types.InlineKeyboardMarkup()
-    keyboard.row(telebot.types.InlineKeyboardButton('Заполнить форму'))
+    keyboard = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+    keyboard.add(telebot.types.KeyboardButton ('Заполнить форму'))
     return keyboard
 
 
-@bot.callback_query_handler(func=lambda call: call.data == 'fill_form')
+@bot.message_handler(func=lambda message: message.text == 'Заполнить форму')
 def fill_help_request_form(call):
     # Обрабатываем нажатие на кнопку для заполнения формы заявки
     bot.send_message(call.message.chat.id, 'Форма заявки на помощь')
@@ -179,25 +207,6 @@ def cancel_help_request_status(message):
     )
 
 
-@bot.message_handler(
-    func=lambda message: message.text == 'Оставить заявку на доработку'
-)
-def resend_support_request(message):
-    # Отправляем сообщение о том, что пользователь хочет оставить заявку на доработку и кнопки
-    bot.send_message(
-        message.chat.id,
-        'Вы хотите оставить заявку на доработку. Пожалуйста, заполните форму:',
-        reply_markup=get_support_request_form_keyboard()
-    )
-
-
-def get_support_request_form_keyboard():
-    # Создаем клавиатуру с кнопками для формы заявки на доработку
-    keyboard = telebot.types.InlineKeyboardMarkup()
-    keyboard.row(telebot.types.InlineKeyboardButton('Заполнить форму'))
-    return keyboard
-
-
 @bot.callback_query_handler(func=lambda call: call.data == 'fill_form')
 def fill_support_request_form(call):
     # Обрабатываем нажатие на кнопку для заполнения формы заявки на доработку
@@ -223,7 +232,9 @@ def get_answer_questions_keyboard():
     return keyboard
 
 
-@bot.message_handler(func=lambda message: message.text == 'Ответить')
+@bot.message_handler(
+    func=lambda message: message.text == 'Ответить'
+)
 def send_contractor_answer(message):
     # Отправляем сообщение о том, что пользователь хочет отправить ответ подрядчику и кнопки
     bot.send_message(
