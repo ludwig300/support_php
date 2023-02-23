@@ -16,27 +16,27 @@ user_messages = {}
 
 def get_access(user_id):
     if 0: # пользователя нет в БД
-        return 0
+        return 0, 0
     elif 0: # пользователь есть в БД, но не оплатил подписку
-        return 1
+        return 1, 0
     else: # пользователь есть в БД и оплатил подписку
-        return 2
+        return 2, 0
 
 
-@telebot.message_handler(commands=['start'])
+@bot.message_handler(commands=['start'])
 def bot_start(message):
     access, contractor = get_access(message.chat.id)
     if access:
         if access==1: # пользователь есть в БД, но не оплатил подписку
             bot.send_message(
                 message.chat.id,
-                f"Приветствую, {contractor.name}",
+                f"Приветствую, {contractor}",
                 reply_markup=get_bot_menu_keyboard_for_1()
             )
         else: # пользователь есть в БД и оплатил подписку
             bot.send_message(
                 message.chat.id,
-                f"Приветствую, {contractor.name}",
+                f"Приветствую, {contractor}",
                 reply_markup=get_bot_menu_keyboard_for_2()
             )
     else: # пользователя нет в БД
