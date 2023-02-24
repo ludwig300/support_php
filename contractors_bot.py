@@ -53,6 +53,16 @@ def get_bot_menu_keyboard_for_0():
     return keyboard
 
 
+savedata = {}
+@bot.message_handler(content_types = ['text'])
+def main(message):
+    if message.text == 'Ввести имя':
+        bot.send_message(message.chat.id, 'Как тебя зовут?')
+        savedata[str(message.chat.id) + 'password'] = 'wait'
+        savedata[str(message.chat.id) + 'lastname'] = '0'
+    print(f"savedata is {savedata}")
+
+
 def get_bot_menu_keyboard_for_1():
     keyboard = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
     keyboard.add(telebot.types.KeyboardButton('Оплатить подписку'))
