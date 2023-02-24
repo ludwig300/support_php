@@ -1,8 +1,16 @@
 import logging
 import time
+import signal
+import sys
+import os
+import django
+
+os.environ['DJANGO_SETTINGS_MODULE'] = 'supportphp.supportphp.settings'
+django.setup()
 
 import telebot
 from environs import Env
+from supportphp.orderbase.models import Maker
 
 # Настройки логирования
 logging.basicConfig(filename='bot.log', level=logging.INFO)
@@ -11,67 +19,145 @@ env = Env()
 env.read_env(override=True)
 bot = telebot.TeleBot(env.str("TELEGRAM_CONTRSCTORS_BOT_API_TOKEN"))
 
-# Словарь для хранения сообщений от пользователей
-user_messages = {}
+
+def signal_handler(signum, frame):
+    sys.exit(0)
+
+
+signal.signal(signal.SIGINT, signal_handler)
+
 
 def get_access(user_id):
-    if 0: # пользователя нет в БД
+    try:
+        maker = Maker.objects.get(telegram_id=user_id)
+        if maker.subscription_is_active: # пользователь есть в БД и оплатил подписку
+            return 2, maker
+        else: # пользователь есть в БД, но не оплатил подписку
+            return 1, maker
+    except Maker.DoesNotExist: # пользователя нет в БД
         return 0, 0
-    elif 0: # пользователь есть в БД, но не оплатил подписку
-        return 1, 0
-    else: # пользователь есть в БД и оплатил подписку
-        return 2, 0
 
 
 @bot.message_handler(commands=['start'])
 def bot_start(message):
     access, contractor = get_access(message.chat.id)
-    if access:
+    if access: # TODO - перечитал задачу, понял что подрядчику никакой подписки оплачивать не нужно. Т.е. нужно полностью удалить make_keyboard_pay_for_subscription, pay_for_subscription
         if access==1: # пользователь есть в БД, но не оплатил подписку
             bot.send_message(
                 message.chat.id,
-                f"Приветствую, {contractor}",
-                reply_markup=get_bot_menu_keyboard_for_1()
+                f"Приветствую, {contractor.name}. Осталось оплатить подписку.",
+                reply_markup=make_keyboard_pay_for_subscription()
             )
         else: # пользователь есть в БД и оплатил подписку
             bot.send_message(
                 message.chat.id,
-                f"Приветствую, {contractor}",
+                f"Приветствую, {contractor}.",
                 reply_markup=get_bot_menu_keyboard_for_2()
             )
     else: # пользователя нет в БД
         bot.send_message(
             message.chat.id,
-            f"Приветствую",
-            reply_markup=get_bot_menu_keyboard_for_0()
+            "Приветствую.\nДля регистрании на сервисе введите, пожалуйста, ваше имя:",
         )
+        bot.register_next_step_handler(message, register_new_contractor_in_db)
 
 
-def get_bot_menu_keyboard_for_0():
-    keyboard = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
-    keyboard.add(telebot.types.KeyboardButton('Ввести Имя'))
-    return keyboard
+def register_new_contractor_in_db(message):
+    if message.text:
+        try:
+            Maker.objects.create(telegram_id=message.chat.id, name=message.text, subscription_is_active=False)
+            bot.send_message(
+                message.chat.id,
+                "Позравляем, вы успешно зарегистрировались на сервисе, осталось оплатить подписку.",
+                reply_markup=make_keyboard_pay_for_subscription(),
+            )
+        except Exception as error_text:
+            bot.send_message(
+                message.chat.id,
+                "На сервисе произошёл сбой, подождите несколько минут и попробуйте ввести имя повторно:",
+            )
+            bot.register_next_step_handler(message, register_new_contractor_in_db)
+            print(f"Error was occured: {error_text}")
+    else:
+        bot.send_message(
+            message.chat.id,
+            "Для регистрании на сервисе введите, пожалуйста, ваше имя:",
+        )
+        bot.register_next_step_handler(message, register_new_contractor_in_db)
 
 
-savedata = {}
-@bot.message_handler(content_types = ['text'])
-def main(message):
-    if message.text == 'Ввести имя':
-        bot.send_message(message.chat.id, 'Как тебя зовут?')
-        savedata[str(message.chat.id) + 'password'] = 'wait'
-        savedata[str(message.chat.id) + 'lastname'] = '0'
-    print(f"savedata is {savedata}")
-
-
-def get_bot_menu_keyboard_for_1():
+def make_keyboard_pay_for_subscription():
     keyboard = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
     keyboard.add(telebot.types.KeyboardButton('Оплатить подписку'))
+    keyboard.add(telebot.types.KeyboardButton('Изменить имя'))
     return keyboard
+
+
+@bot.message_handler(func=lambda message: message.text == 'Оплатить подписку')
+def pay_for_subscription(message):
+    access, contractor = get_access(message.chat.id)
+    if not access:
+        bot.send_message(
+            message.chat.id,
+            "Прежде чем оплачивать пописку требуется пройти регистрацию. Введите, пожалуйста, ваше имя:",
+        )
+        bot.register_next_step_handler(message, register_new_contractor_in_db)
+    elif contractor.subscription_is_active:
+        bot.send_message(
+            message.chat.id,
+            "Вы уже оплатили подписку.",
+            reply_markup=get_bot_menu_keyboard_for_2(),
+        )
+    else:
+        try:  # TODO - пока что это только определение места, где будет происходить оплата.
+            contractor.subscription_is_active = True
+            contractor.save()
+            bot.send_message(
+                message.chat.id,
+                "Поздравляем, вы оплатили подписку!",
+                reply_markup=get_bot_menu_keyboard_for_2(),
+            )
+        except Exception as error_text:
+            bot.send_message(
+                message.chat.id,
+                "Оплата не прошла, проверте баланс или подождите несколько минут и попробуйте повторно:",
+            )
+            print(f"Error was occured: {error_text}")
+
+
+@bot.message_handler(func=lambda message: message.text == 'Изменить имя')
+def change_contractors_name(message):
+    access, _ = get_access(message.chat.id)
+    if not access:
+        bot.send_message(
+            message.chat.id,
+            "Прежде чем менять имя требуется пройти регистрацию. Введите, пожалуйста, ваше имя:",
+        )
+        bot.register_next_step_handler(message, register_new_contractor_in_db)
+    else:
+        bot.send_message(
+            message.chat.id,
+            "Введите, пожалуйста, ваше новое имя:",
+        )
+        bot.register_next_step_handler(message, change_name)
+
+
+def change_name(message):
+    _, contractor = get_access(message.chat.id)
+    if message.text:
+        contractor.name = message.text
+        contractor.save()
+    else:
+        bot.send_message(
+            message.chat.id,
+            "Введена пустая строка, имя не изменено.",
+        )
 
 
 def get_bot_menu_keyboard_for_2():
     keyboard = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
     keyboard.add(telebot.types.KeyboardButton('Вывести список заказов'))
+    keyboard.add(telebot.types.KeyboardButton('Изменить имя'))
     return keyboard
 
 
