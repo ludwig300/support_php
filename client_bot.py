@@ -23,6 +23,9 @@ def send_welcome(message):
         'Добро пожаловать! Для начала работы, оплатите подписку.',
         reply_markup=get_main_keyboard()
     )
+    print('ID:', message.from_user.id)
+    print('Name:', message.from_user.first_name, message.from_user.last_name)
+    print('Username:', message.from_user.username)
 
 
 def get_main_keyboard():
@@ -91,7 +94,7 @@ def get_bot_menu_keyboard():
     # Создаем клавиатуру с кнопками для бота
     keyboard = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
     keyboard.add(telebot.types.KeyboardButton('Оставить заявку'))
-    keyboard.add(telebot.types.KeyboardButton('Запросить помощь по заявке'))
+    keyboard.add(telebot.types.KeyboardButton('Проверка статуса заявки'))
     return keyboard
 
 
@@ -100,49 +103,29 @@ def show_support_examples(message):
     # Отправляем сообщение с примерами заявок и кнопками
     bot.send_message(
         message.chat.id,
-        'Чтобы оставить заявку на доработку, вам необходимо заполнить форму. Вот несколько примеров: Тут нужен шаблон',
+        'Чтобы оставить заявку, вам необходимо заполнить форму. Вот несколько примеров: Тут нужен шаблон',
         reply_markup=get_help_request_status_keyboard()
     )
+    # устанавливаем следующий обработчик на ответ с текстом заявки
+    bot.register_next_step_handler(message, process_request)
 
 
-# Обработчик текстовых сообщений
-@bot.message_handler(func=lambda message: True, content_types=['text'])
-def handle_text_message(message):
-    # Сохраняем сообщение в словаре с помощью ID пользователя
-    user_messages[message.chat.id] = message.text
-    bot.send_message(
-        message.chat.id,
-        'Сообщение сохранено. Нажмите кнопку "Продолжить", чтобы продолжить работу.',
-        reply_markup=get_support_examples_keyboard()
-    )
-    logging.info(message.text)
-
-
-def get_support_examples_keyboard():
-    # Создаем клавиатуру с кнопками для примеров заявок
-    keyboard = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
-    keyboard.add(
-        telebot.types.KeyboardButton('Заявка на добавление функционала')
-    )
-    keyboard.add(
-        telebot.types.KeyboardButton('Заявка на исправление ошибки')
-    )
-    keyboard.add(
-        telebot.types.KeyboardButton(
-            'Заявка на улучшение производительности'
-        )
-    )
-    return keyboard
+# обработчик введенного текста заявки
+def process_request(message):
+    # выводим текст заявки в консоль
+    print("Получена заявка: {}".format(message.text))
+    # отправляем сообщение с подтверждением получения заявки
+    bot.send_message(chat_id=message.chat.id, text="Заявка получена. Спасибо!", reply_markup=get_help_request_form_keyboard())
 
 
 @bot.message_handler(
-    func=lambda message: message.text == 'Запросить помощь по заявке'
+    func=lambda message: message.text == 'Проверка статуса заявки'
 )
 def show_help_request(message):
     # Отправляем сообщение о том, что пользователь хочет получить помощь по заявке и кнопки
     bot.send_message(
         message.chat.id,
-        'Вы хотите получить помощь по заявке. Что вы хотите сделать?',
+        'Ваша заявка в работе. Подрядчик %name%. Срок исполнения %hours%.',
         reply_markup=get_help_request_keyboard()
     )
 
@@ -150,7 +133,6 @@ def show_help_request(message):
 def get_help_request_keyboard():
     # Создаем клавиатуру с кнопками для помощи по заявке
     keyboard = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
-    keyboard.add(telebot.types.KeyboardButton('Отправить заявку'))
     keyboard.add(telebot.types.KeyboardButton('Получить статус заявки'))
     return keyboard
 
@@ -160,7 +142,7 @@ def send_help_request(message):
     # Отправляем сообщение о том, что пользователь хочет отправить заявку и кнопки
     bot.send_message(
         message.chat.id,
-        'Вы хотите отправить заявку. Пожалуйста, заполните форму:',
+        'Заявка отправлена',
         reply_markup=get_help_request_form_keyboard()
     )
 
@@ -168,14 +150,34 @@ def send_help_request(message):
 def get_help_request_form_keyboard():
     # Создаем клавиатуру с кнопками для формы заявки на помощь
     keyboard = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
-    keyboard.add(telebot.types.KeyboardButton ('Заполнить форму'))
+    keyboard.add(telebot.types.KeyboardButton('Задать дополнительный вопрос'))
     return keyboard
 
 
-@bot.message_handler(func=lambda message: message.text == 'Заполнить форму')
-def fill_help_request_form(call):
-    # Обрабатываем нажатие на кнопку для заполнения формы заявки
-    bot.send_message(call.message.chat.id, 'Форма заявки на помощь')
+@bot.message_handler(
+        func=lambda message: message.text == 'Задать дополнительный вопрос'
+    )
+def ask_extra_question(message):
+    # Отправляем сообщение с примерами заявок и кнопками
+    bot.send_message(
+        message.chat.id,
+        'Отправьте в чат все дополнительные вопросы одним сообщением.',
+        reply_markup=get_help_request_status_keyboard()
+    )
+    # устанавливаем следующий обработчик на ответ с текстом заявки
+    bot.register_next_step_handler(message, extra_question_request)
+
+
+# обработчик введенного текста заявки
+def extra_question_request(message):
+    # выводим текст заявки в консоль
+    print("Дополнительные вопросы от клиента: {}".format(message.text))
+    # отправляем сообщение с подтверждением получения заявки
+    bot.send_message(
+        chat_id=message.chat.id,
+        text="Ваш вопрос передан. Спасибо!",
+        reply_markup=get_help_request_form_keyboard()
+    )
 
 
 @bot.message_handler(
@@ -205,12 +207,6 @@ def cancel_help_request_status(message):
         'Вы отменили запрос статуса заявки.',
         reply_markup=get_help_request_keyboard()
     )
-
-
-@bot.callback_query_handler(func=lambda call: call.data == 'fill_form')
-def fill_support_request_form(call):
-    # Обрабатываем нажатие на кнопку для заполнения формы заявки на доработку
-    bot.send_message(call.message.chat.id, 'Форма заявки на доработку')
 
 
 @bot.message_handler(
