@@ -10,7 +10,7 @@ django.setup()
 
 import telebot
 from environs import Env
-from supportphp.orderbase.models import Maker
+from supportphp.orderbase.models import Maker, Order
 
 # Настройки логирования
 logging.basicConfig(filename='bot.log', level=logging.INFO)
@@ -156,9 +156,61 @@ def change_name(message):
 
 def get_bot_menu_keyboard_for_2():
     keyboard = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
-    keyboard.add(telebot.types.KeyboardButton('Вывести список заказов'))
+    keyboard.add(telebot.types.KeyboardButton('Вывести список доступных заказов'))
+    keyboard.add(telebot.types.KeyboardButton('Вывести список заказов, которые я взял'))
     keyboard.add(telebot.types.KeyboardButton('Изменить имя'))
     return keyboard
+
+
+@bot.message_handler(func=lambda message: message.text == 'Вывести список доступных заказов')
+def show_orders_list(message):
+    active_untaken_orders = Order.objects.filter(order_is_done=False, maker=None)
+    for order in active_untaken_orders:
+        bot.send_message(
+            message.chat.id,
+            f"Заказ №{order.id}\nНазвание: {order.name}\nВремя на заказ: {order.exec_time}\nТекст: {order.problem}",
+        )
+        inline_btn = telebot.types.InlineKeyboardButton(f"Взять заказ №{order.id}", callback_data=f"order {order.id}")
+        telebot.types.InlineKeyboardMarkup().add(inline_btn)
+
+
+@bot.callback_query_handler(func=lambda c: 'order' in c.data)
+async def process_callback_order_button(callback_query: telebot.types.CallbackQuery):
+    _, order_id = callback_query.data.split(" ")
+    order = Order.objects.get(id=order_id)
+    contractor = Maker.objects.get(telegram_id=callback_query.from_user.id)
+
+    await bot.answer_callback_query(callback_query.id)
+    if order.order_is_done:
+        await bot.send_message(callback_query.from_user.id, 'Этот заказ уже закрыт.')
+    elif order.maker:
+        await bot.send_message(callback_query.from_user.id, 'Другой подрядчик уже взял этот заказ.')
+    else:
+        try:
+            order.maker = contractor
+            order.save()
+            await bot.send_message(callback_query.from_user.id, 'Поздравляю, вы взяли этот заказ!')
+        except Exception as error_text:
+            await bot.send_message(callback_query.from_user.id, 'Случилась непредвиденная ошибка, попробуйте ещё раз через несколько минут.')
+            print(f"Error was occured: {error_text}")
+
+
+@bot.message_handler(func=lambda message: message.text == 'Вывести список заказов, которые я взял')
+def show_my_orders_list(message):
+    #contractor = Maker.objects.get(telegram_id=message.chat.id)
+    #contractor_orders = Order.objects.filter(order_is_done=False, maker=contractor)
+    contractor_orders = Maker.objects.get(telegram_id=message.chat.id)
+    count = 0
+    for order in contractor_orders.order_set:
+        bot.send_message(
+            message.chat.id,
+            f"Заказ №{order.id}\nНазвание: {order.name}\nВремя на заказ: {order.exec_time}\nТекст: {order.problem}",
+        )
+        count += 1
+    bot.send_message(
+        message.chat.id,
+        f"Всего заказов = {count}.",
+    )
 
 
 if __name__ == '__main__':
@@ -168,3 +220,9 @@ if __name__ == '__main__':
         except Exception as e:
             print(e)
             time.sleep(5)
+
+
+# TODO
+# 1) я не реализовал ни одну часть из общения между клиентом и заказчиком.
+#    (т.е. не только общение с клиентом, но и как завершить работу и как об этом уведомить клиента - непонятно).
+# 2) функция оплаты - пока что шаблон.
