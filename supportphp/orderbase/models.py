@@ -4,6 +4,7 @@ from django.db import models
 class Client(models.Model):
     telegram_id = models.CharField(
         'ID',
+        unique=True,
         max_length=200,
     )
     name = models.CharField(
@@ -15,12 +16,13 @@ class Client(models.Model):
     )
 
     def __str__(self):
-        return f'{self.name}'
+        return f'{self.name} - подписка активна:{self.subscription_is_active}'
 
 
 class Maker(models.Model):
     telegram_id = models.CharField(
         'ID',
+        unique=True,
         max_length=200,
     )
     name = models.CharField(
@@ -32,12 +34,12 @@ class Maker(models.Model):
     )
 
     def __str__(self):
-        return f'{self.name}'
+        return f'{self.name} - подписка активна:{self.subscription_is_active}'
 
 
 class Order(models.Model):
     order_datetime = models.DateTimeField(
-        'Время формирования заявки ',
+        'Дата и время формирования заявки ',
         auto_now=True,
         null=False,
         blank=False,
@@ -80,4 +82,33 @@ class Order(models.Model):
     )
 
     def __str__(self):
-        return f'{self.name}'
+        return f'{self.name} заказчик: {self.client} - исполнитель: {self.maker} - выполнено: {self.order_is_done}'
+
+
+class Conversation(models.Model):
+    message_datetime = models.DateTimeField(
+        'Дата и время отправки сообщения',
+        auto_now=True,
+        null=False,
+        blank=False,
+    )
+    message_sender = models.CharField(
+        'Отправитель сообщения (ID)',
+        max_length=200,
+    )
+    message_receiver = models.CharField(
+        'Получатель сообщения (ID)',
+        max_length=200,
+    )
+    message_text = models.TextField(
+        'Текст сообщения',
+    )
+    message_is_read = models.BooleanField(
+        'Сообщение прочитано',
+    )
+
+    def __str__(self):
+        return f'{self.message_datetime} ' \
+               f'from:{self.message_sender} ' \
+               f'to:{self.message_receiver} - ' \
+               f'is read:{self.message_is_read}'
