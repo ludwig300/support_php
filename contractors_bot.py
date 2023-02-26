@@ -10,7 +10,7 @@ django.setup()
 
 import telebot
 from environs import Env
-from supportphp.orderbase.models import Maker, Order
+from supportphp.orderbase.models import Maker, Order, Conversation
 
 # Настройки логирования
 logging.basicConfig(filename='bot.log', level=logging.INFO)
@@ -22,6 +22,8 @@ bot = telebot.TeleBot(env.str("TELEGRAM_CONTRSCTORS_BOT_API_TOKEN"))
 
 def signal_handler(signum, frame):
     sys.exit(0)
+
+CURRENT_ORDER_ID = 0
 
 
 signal.signal(signal.SIGINT, signal_handler)
@@ -158,6 +160,8 @@ def get_bot_menu_keyboard_for_2():
     keyboard = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
     keyboard.add(telebot.types.KeyboardButton('Вывести список доступных заказов'))
     keyboard.add(telebot.types.KeyboardButton('Вывести список заказов, которые я взял'))
+    keyboard.add(telebot.types.KeyboardButton('Вывести список ответов от клиентов'))
+    keyboard.add(telebot.types.KeyboardButton('Написать вопрос по заказу'))
     keyboard.add(telebot.types.KeyboardButton('Изменить имя'))
     return keyboard
 
@@ -213,6 +217,75 @@ def show_my_orders_list(message):
     )
 
 
+@bot.message_handler(func=lambda message: message.text == 'Вывести список непрочитанных ответов от клиентов')
+def show_my_clients_answers(message):
+    conversations = Conversation.objects.filter(message_receiver=message.chat.id, message_is_read=False)
+    count = 0
+    for conversation in conversations:
+        bot.send_message(
+            message.chat.id,
+            f"Ответ по заказу №{conversation.order}:\n{conversation.message_text}",
+        )
+        conversation.message_is_read = True
+        conversation.save()
+        count += 1
+    bot.send_message(
+        message.chat.id,
+        f"Всего ответов = {count}.",
+    )
+
+
+@bot.message_handler(func=lambda message: message.text == 'Написать вопрос по заказу')
+def send_question_to_client(message):
+    bot.send_message(
+        message.chat.id,
+        "Введите пожалуйста номер заказа:",
+    )
+    bot.register_next_step_handler(message, get_order_id_to_send_question)
+
+
+def get_order_id_to_send_question(message):
+    try:
+        order = Order.objects.get(id=int(message.text))
+        if order.order_is_done:
+            bot.send_message(
+                message.chat.id,
+                "Заказ уже закрыт.",
+            )
+        else:
+            bot.send_message(
+                message.chat.id,
+                "Введите пожалуйста вопрос:",
+            )
+            CURRENT_ORDER_ID = int(message.text)
+            bot.register_next_step_handler(message, get_message_to_send_question)
+    except Order.DoesNotExist:
+        bot.send_message(
+            message.chat.id,
+            "Заказа с таким номером не существует.",
+        )
+
+def get_message_to_send_question(message):
+    try:
+        order = Order.objects.get(id=CURRENT_ORDER_ID)
+        Conversation.objects.create(
+            message_sender=message.chat.id,
+            message_receiver=order.client.telegram_id,
+            message_text=message.text,
+            message_is_read=False
+        )
+        bot.send_message(
+            message.chat.id,
+            "Вопрос успешно отправлен.",
+        )
+    except Exception as error_text:
+        bot.send_message(
+            message.chat.id,
+            "На стороне сервера возникли непредвиденные сложности, пожалуйста, подождите несколько минут и попробуйте снова.",
+        )
+        print(f"Error was occured: {error_text}")
+
+
 if __name__ == '__main__':
     while True:
         try:
@@ -223,7 +296,6 @@ if __name__ == '__main__':
 
 
 # TODO
-# 1) я не реализовал ни одну часть из общения между клиентом и заказчиком.
-#    (т.е. не только общение с клиентом, но и как завершить работу и как об этом уведомить клиента - непонятно).
+# 1) сообщения между пользователями требуют в моделе `Conversation` поля `order` = `id` из модели `Order`
 # 2) функция оплаты - пока что шаблон.
 # 3) requirements.txt не доделаны
