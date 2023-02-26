@@ -92,6 +92,13 @@ class Conversation(models.Model):
         null=False,
         blank=False,
     )
+    order_id = models.ForeignKey(
+        Order,
+        on_delete=models.CASCADE,
+        verbose_name='Заказ',
+        null=True,
+        blank=True,
+    )
     message_sender = models.CharField(
         'Отправитель сообщения (ID)',
         max_length=200,
