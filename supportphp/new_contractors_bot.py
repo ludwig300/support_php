@@ -5,23 +5,28 @@ import sys
 import os
 import django
 
-os.environ['DJANGO_SETTINGS_MODULE'] = 'supportphp.supportphp.settings'
-django.setup()
-
 import telebot
 from environs import Env
-from supportphp.orderbase.models import Maker, Order, Conversation
+
+os.environ['DJANGO_SETTINGS_MODULE'] = 'supportphp.settings'
+django.setup()
+
+from supportphp.settings import TG_TOKEN_CONTRACTOR_BOT
+from orderbase.models import Client, Maker, Order, Conversation
+
 
 # Настройки логирования
 logging.basicConfig(filename='bot.log', level=logging.INFO)
 
 env = Env()
 env.read_env(override=True)
-bot = telebot.TeleBot(env.str("TELEGRAM_CONTRSCTORS_BOT_API_TOKEN"))
+# bot = telebot.TeleBot(env.str("TELEGRAM_CONTRACTORS_BOT_API_TOKEN"))
+bot = TG_TOKEN_CONTRACTOR_BOT
 
 
 def signal_handler(signum, frame):
     sys.exit(0)
+
 
 CURRENT_ORDER_ID = 0
 
@@ -32,31 +37,31 @@ signal.signal(signal.SIGINT, signal_handler)
 def get_access(user_id):
     try:
         maker = Maker.objects.get(telegram_id=user_id)
-        if maker.subscription_is_active: # пользователь есть в БД и оплатил подписку
+        if maker.subscription_is_active:  # пользователь есть в БД и оплатил подписку
             return 2, maker
-        else: # пользователь есть в БД, но не оплатил подписку
+        else:  # пользователь есть в БД, но не оплатил подписку
             return 1, maker
-    except Maker.DoesNotExist: # пользователя нет в БД
+    except Maker.DoesNotExist:  # пользователя нет в БД
         return 0, 0
 
 
 @bot.message_handler(commands=['start'])
 def bot_start(message):
     access, contractor = get_access(message.chat.id)
-    if access: # TODO - перечитал задачу, понял что подрядчику никакой подписки оплачивать не нужно. Т.е. нужно полностью удалить make_keyboard_pay_for_subscription, pay_for_subscription
-        if access==1: # пользователь есть в БД, но не оплатил подписку
+    if access:  # TODO - перечитал задачу, понял что подрядчику никакой подписки оплачивать не нужно. Т.е. нужно полностью удалить make_keyboard_pay_for_subscription, pay_for_subscription
+        if access == 1:  # пользователь есть в БД, но не оплатил подписку
             bot.send_message(
                 message.chat.id,
                 f"Приветствую, {contractor.name}. Осталось оплатить подписку.",
                 reply_markup=make_keyboard_pay_for_subscription()
             )
-        else: # пользователь есть в БД и оплатил подписку
+        else:  # пользователь есть в БД и оплатил подписку
             bot.send_message(
                 message.chat.id,
                 f"Приветствую, {contractor}.",
                 reply_markup=get_bot_menu_keyboard_for_2()
             )
-    else: # пользователя нет в БД
+    else:  # пользователя нет в БД
         bot.send_message(
             message.chat.id,
             "Приветствую.\nДля регистрании на сервисе введите, пожалуйста, ваше имя:",
@@ -193,16 +198,22 @@ async def process_callback_order_button(callback_query: telebot.types.CallbackQu
         try:
             order.maker = contractor
             order.save()
-            await bot.send_message(callback_query.from_user.id, 'Поздравляю, вы взяли этот заказ!')
+            await bot.send_message(
+                callback_query.from_user.id,
+                'Поздравляю, вы взяли этот заказ!'
+            )
         except Exception as error_text:
-            await bot.send_message(callback_query.from_user.id, 'Случилась непредвиденная ошибка, попробуйте ещё раз через несколько минут.')
+            await bot.send_message(
+                callback_query.from_user.id,
+                'Случилась непредвиденная ошибка, попробуйте ещё раз через несколько минут.'
+            )
             print(f"Error was occured: {error_text}")
 
 
 @bot.message_handler(func=lambda message: message.text == 'Вывести список заказов, которые я взял')
 def show_my_orders_list(message):
-    #contractor = Maker.objects.get(telegram_id=message.chat.id)
-    #contractor_orders = Order.objects.filter(order_is_done=False, maker=contractor)
+    # contractor = Maker.objects.get(telegram_id=message.chat.id)
+    # contractor_orders = Order.objects.filter(order_is_done=False, maker=contractor)
     contractor_orders = Maker.objects.get(telegram_id=message.chat.id)
     count = 0
     for order in contractor_orders.order_set:
@@ -265,6 +276,7 @@ def get_order_id_to_send_question(message):
             "Заказа с таким номером не существует.",
         )
 
+
 def get_message_to_send_question(message):
     try:
         order = Order.objects.get(id=CURRENT_ORDER_ID)
@@ -281,7 +293,7 @@ def get_message_to_send_question(message):
     except Exception as error_text:
         bot.send_message(
             message.chat.id,
-            "На стороне сервера возникли непредвиденные сложности, пожалуйста, подождите несколько минут и попробуйте снова.",
+            "На стороне сервера возникли непредвиденные сложности, пожалуйста, попробуйте снова через несколько минут.",
         )
         print(f"Error was occured: {error_text}")
 

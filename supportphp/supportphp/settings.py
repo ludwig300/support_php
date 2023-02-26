@@ -37,13 +37,13 @@ ALLOWED_HOSTS = env.list('ALLOWED_HOSTS', ['localhost', '127.0.0.1'])
 # Application definition
 
 INSTALLED_APPS = [
+    'orderbase',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'orderbase',
 ]
 
 MIDDLEWARE = [
@@ -124,4 +124,5 @@ STATIC_URL = 'static/'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-TG_TOKEN = env.str("TG_TOKEN")
+TG_TOKEN_CLIENT_BOT = env.str("TG_TOKEN")
+TG_TOKEN_CONTRACTOR_BOT = env.str("TELEGRAM_CONTRACTORS_BOT_API_TOKEN")
