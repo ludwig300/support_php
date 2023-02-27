@@ -234,7 +234,7 @@ def process_callback_order_button(callback_query: telebot.types.CallbackQuery):
 def show_my_orders_list(message):
     contractor = Maker.objects.get(telegram_id=message.chat.id)
     count = 0
-    for order in contractor.order_set.all():
+    for order in contractor.order_set.filter(order_is_done=False):
         bot.send_message(
             message.chat.id,
             f"Заказ №{order.id}\nНазвание: {order.name}\nВремя на заказ: {order.exec_time}\nТекст: {order.problem}",
