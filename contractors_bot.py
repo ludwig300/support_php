@@ -23,10 +23,11 @@ bot = telebot.TeleBot(env.str("TELEGRAM_CONTRSCTORS_BOT_API_TOKEN"))
 def signal_handler(signum, frame):
     sys.exit(0)
 
-CURRENT_ORDER_ID = 0
-
-
+    
 signal.signal(signal.SIGINT, signal_handler)
+
+
+CURRENT_ORDER_ID = 0
 
 
 def get_access(user_id):
@@ -224,7 +225,7 @@ def show_my_clients_answers(message):
     for conversation in conversations:
         bot.send_message(
             message.chat.id,
-            f"Ответ по заказу №{conversation.order}:\n{conversation.message_text}",
+            f"Ответ по заказу №{conversation.order_id}:\n{conversation.message_text}", # TODO
         )
         conversation.message_is_read = True
         conversation.save()
