@@ -281,6 +281,7 @@ def get_message_to_send_question(message):
         Conversation.objects.create(
             message_sender=message.chat.id,
             message_receiver=order.client.telegram_id,
+            order_id=CURRENT_ORDER_ID,
             message_text=message.text,
             message_is_read=False
         )

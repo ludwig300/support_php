@@ -20,15 +20,11 @@ logging.basicConfig(filename='bot.log', level=logging.INFO)
 
 env = Env()
 env.read_env(override=True)
-# bot = telebot.TeleBot(env.str("TELEGRAM_CONTRACTORS_BOT_API_TOKEN"))
-bot = TG_TOKEN_CONTRACTOR_BOT
+bot = telebot.TeleBot(TG_TOKEN_CONTRACTOR_BOT)
 
 
 def signal_handler(signum, frame):
     sys.exit(0)
-
-
-CURRENT_ORDER_ID = 0
 
 
 signal.signal(signal.SIGINT, signal_handler)
@@ -150,23 +146,31 @@ def change_contractors_name(message):
 
 
 def change_name(message):
-    _, contractor = get_access(message.chat.id)
-    if message.text:
-        contractor.name = message.text
-        contractor.save()
+    access, contractor = get_access(message.chat.id)
+    contractor.name = message.text
+    contractor.save()
+    if access==1:
+        bot.send_message(
+            message.chat.id,
+            "Вы успешно изменили своё имя.",
+            reply_markup=make_keyboard_pay_for_subscription(),
+        )
     else:
         bot.send_message(
             message.chat.id,
-            "Введена пустая строка, имя не изменено.",
+            "Вы успешно изменили своё имя.",
+            reply_markup=get_bot_menu_keyboard_for_2(),
         )
+
 
 
 def get_bot_menu_keyboard_for_2():
     keyboard = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
     keyboard.add(telebot.types.KeyboardButton('Вывести список доступных заказов'))
     keyboard.add(telebot.types.KeyboardButton('Вывести список заказов, которые я взял'))
-    keyboard.add(telebot.types.KeyboardButton('Вывести список ответов от клиентов'))
+    keyboard.add(telebot.types.KeyboardButton('Вывести список непрочитанных ответов от клиентов'))
     keyboard.add(telebot.types.KeyboardButton('Написать вопрос по заказу'))
+    keyboard.add(telebot.types.KeyboardButton('Завершить заказ'))
     keyboard.add(telebot.types.KeyboardButton('Изменить имя'))
     return keyboard
 
@@ -174,36 +178,52 @@ def get_bot_menu_keyboard_for_2():
 @bot.message_handler(func=lambda message: message.text == 'Вывести список доступных заказов')
 def show_orders_list(message):
     active_untaken_orders = Order.objects.filter(order_is_done=False, maker=None)
+    count = 0
     for order in active_untaken_orders:
+        count += 1
+        inline_btn = telebot.types.InlineKeyboardButton(f"Взять заказ №{order.id}", callback_data=f"order {order.id}")
+        inline = telebot.types.InlineKeyboardMarkup().add(inline_btn)
         bot.send_message(
             message.chat.id,
             f"Заказ №{order.id}\nНазвание: {order.name}\nВремя на заказ: {order.exec_time}\nТекст: {order.problem}",
+            reply_markup=inline,
         )
-        inline_btn = telebot.types.InlineKeyboardButton(f"Взять заказ №{order.id}", callback_data=f"order {order.id}")
-        telebot.types.InlineKeyboardMarkup().add(inline_btn)
+    bot.send_message(
+        message.chat.id,
+        f"Итого доступных заказов: {count}",
+        reply_markup=get_bot_menu_keyboard_for_2(),
+    )
 
 
 @bot.callback_query_handler(func=lambda c: 'order' in c.data)
-async def process_callback_order_button(callback_query: telebot.types.CallbackQuery):
+def process_callback_order_button(callback_query: telebot.types.CallbackQuery):
     _, order_id = callback_query.data.split(" ")
     order = Order.objects.get(id=order_id)
     contractor = Maker.objects.get(telegram_id=callback_query.from_user.id)
 
-    await bot.answer_callback_query(callback_query.id)
+    bot.answer_callback_query(callback_query.id)
     if order.order_is_done:
-        await bot.send_message(callback_query.from_user.id, 'Этот заказ уже закрыт.')
+        bot.send_message(
+            callback_query.from_user.id,
+            'Этот заказ уже закрыт.',
+        )
     elif order.maker:
-        await bot.send_message(callback_query.from_user.id, 'Другой подрядчик уже взял этот заказ.')
+        bot.send_message(
+            callback_query.from_user.id,
+            'Другой подрядчик уже взял этот заказ.',
+        )
     else:
         try:
+            contractor.order_set.add(order)
+            contractor.save()
             order.maker = contractor
             order.save()
-            await bot.send_message(
+            bot.send_message(
                 callback_query.from_user.id,
                 'Поздравляю, вы взяли этот заказ!'
             )
         except Exception as error_text:
-            await bot.send_message(
+            bot.send_message(
                 callback_query.from_user.id,
                 'Случилась непредвиденная ошибка, попробуйте ещё раз через несколько минут.'
             )
@@ -212,11 +232,9 @@ async def process_callback_order_button(callback_query: telebot.types.CallbackQu
 
 @bot.message_handler(func=lambda message: message.text == 'Вывести список заказов, которые я взял')
 def show_my_orders_list(message):
-    # contractor = Maker.objects.get(telegram_id=message.chat.id)
-    # contractor_orders = Order.objects.filter(order_is_done=False, maker=contractor)
-    contractor_orders = Maker.objects.get(telegram_id=message.chat.id)
+    contractor = Maker.objects.get(telegram_id=message.chat.id)
     count = 0
-    for order in contractor_orders.order_set:
+    for order in contractor.order_set.all():
         bot.send_message(
             message.chat.id,
             f"Заказ №{order.id}\nНазвание: {order.name}\nВремя на заказ: {order.exec_time}\nТекст: {order.problem}",
@@ -230,12 +248,19 @@ def show_my_orders_list(message):
 
 @bot.message_handler(func=lambda message: message.text == 'Вывести список непрочитанных ответов от клиентов')
 def show_my_clients_answers(message):
-    conversations = Conversation.objects.filter(message_receiver=message.chat.id, message_is_read=False)
+    try:
+        conversations = Conversation.objects.filter(message_receiver=f"tg_id_{message.chat.id}", message_is_read=False)
+    except Exception as error_text:
+        bot.send_message(
+            message.chat.id,
+            "Произошла ошибка на стороне сервера, пожалуйсята, попробуйте позже.",
+        )
+        print(f"error was occured: {error_text}")
     count = 0
     for conversation in conversations:
         bot.send_message(
             message.chat.id,
-            f"Ответ по заказу №{conversation.order}:\n{conversation.message_text}",
+            f"Ответ по заказу №{conversation.order_id.id}:\n{conversation.message_text}",
         )
         conversation.message_is_read = True
         conversation.save()
@@ -257,7 +282,8 @@ def send_question_to_client(message):
 
 def get_order_id_to_send_question(message):
     try:
-        order = Order.objects.get(id=int(message.text))
+        order_id = int(message.text)
+        order = Order.objects.get(id=order_id)
         if order.order_is_done:
             bot.send_message(
                 message.chat.id,
@@ -268,8 +294,7 @@ def get_order_id_to_send_question(message):
                 message.chat.id,
                 "Введите пожалуйста вопрос:",
             )
-            CURRENT_ORDER_ID = int(message.text)
-            bot.register_next_step_handler(message, get_message_to_send_question)
+            bot.register_next_step_handler(message, get_message_to_send_question, order_id)
     except Order.DoesNotExist:
         bot.send_message(
             message.chat.id,
@@ -277,12 +302,13 @@ def get_order_id_to_send_question(message):
         )
 
 
-def get_message_to_send_question(message):
+def get_message_to_send_question(message, order_id):
     try:
-        order = Order.objects.get(id=CURRENT_ORDER_ID)
+        order = Order.objects.get(id=order_id)
         Conversation.objects.create(
-            message_sender=message.chat.id,
-            message_receiver=order.client.telegram_id,
+            message_sender=f"tg_id_{message.chat.id}",
+            message_receiver=f"tg_id_{order.client.telegram_id}",
+            order_id=order,
             message_text=message.text,
             message_is_read=False
         )
@@ -296,6 +322,45 @@ def get_message_to_send_question(message):
             "На стороне сервера возникли непредвиденные сложности, пожалуйста, попробуйте снова через несколько минут.",
         )
         print(f"Error was occured: {error_text}")
+
+
+@bot.message_handler(func=lambda message: message.text == 'Завершить заказ')
+def send_question_to_client(message):
+    bot.send_message(
+        message.chat.id,
+        "Введите пожалуйста номер заказа:",
+    )
+    bot.register_next_step_handler(message, get_order_id_to_close_order)
+
+
+def get_order_id_to_close_order(message):
+    try:
+        order_id = int(message.text)
+        order = Order.objects.get(id=order_id)
+        if order.order_is_done:
+            bot.send_message(
+                message.chat.id,
+                "Заказ уже закрыт.",
+            )
+        else:
+            order.order_is_done = True
+            order.save()
+            Conversation.objects.create(
+                message_sender=f"tg_id_{message.chat.id}",
+                message_receiver=f"tg_id_{order.client.telegram_id}",
+                order_id=order,
+                message_text=f"Ваш заказ под номером {order_id} завершён.",
+                message_is_read=False
+            )
+            bot.send_message(
+                message.chat.id,
+                "Заказ успешно завершён.",
+            )
+    except Order.DoesNotExist:
+        bot.send_message(
+            message.chat.id,
+            "Заказа с таким номером не существует.",
+        )
 
 
 if __name__ == '__main__':
